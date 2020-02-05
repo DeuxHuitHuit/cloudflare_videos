@@ -12,7 +12,6 @@
     define('DOCROOT', str_replace(RELROOT, '', rtrim(dirname(__FILE__), '\\/') ));
     define('EXTENSION_ROOT', str_replace(CURRENT_FOLDER, '', rtrim(dirname(__FILE__), '\\/') ));
 
-    require_once(EXTENSION_ROOT . '/vendor/autoload.php');
     require_once(DOCROOT . '/vendor/autoload.php');
     require_once(DOCROOT . '/symphony/lib/boot/bundle.php');
 
@@ -51,27 +50,35 @@
             }
 
             if ($unprocessedVideo['uploaded'] === 'no') {
-                $key = uniqid();
+                $curl = curl_init();
 
-
-                $client = new \TusPhp\Tus\Client('https://api.cloudflare.com/client/v4/zones/' . $config['zone-id'] . '/stream', $tusOptions);
-                $client->setKey($key);
-                $client->setApiPath('/client/v4/zones/' . $config['zone-id'] . '/stream');
-                $client->file(DOCROOT . '/' . trim($field->get('path'), '/') . '/' . $unprocessedVideo['file'], $unprocessedVideo['file']);
-
-                $client->setMetadata(array(
-                    'filename' => $unprocessedVideo['file'],
-                    'filetype' => $unprocessedVideo['mimetype'],
+                curl_setopt_array($curl, array(
+                    CURLOPT_URL => 'https://api.cloudflare.com/client/v4/accounts/' . $config['account-id'] . '/media',
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_ENCODING => '',
+                    CURLOPT_MAXREDIRS => 10,
+                    CURLOPT_TIMEOUT => 0,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                    CURLOPT_CUSTOMREQUEST => 'POST',
+                    CURLOPT_POSTFIELDS => array('file'=> new CURLFILE(DOCROOT . '/' . trim($field->get('path'), '/') . '/' . $unprocessedVideo['file'])),
+                    CURLOPT_HTTPHEADER => array(
+                        'X-Auth-Key: ' . $config['api-key'],
+                        'X-Auth-Email: ' . $config['email'],
+                    ),
                 ));
 
-                $unprocessedVideo['video_url'] = $client->create($key);
+                $response = curl_exec($curl);
+                curl_close($curl);
 
-                echo 'Cloudflare video instence ' . $unprocessedVideo['video_url'] . PHP_EOL;
+                $response = json_decode($response, JSON_FORCE_OBJECT);
 
-                $client->upload();
-                $unprocessedVideo['uploaded'] = 'yes';
+                if ($response['success']) {
+                    $unprocessedVideo['video_url'] = 'https://api.cloudflare.com/client/v4/accounts/' . $config['account-id'] . '/media/' . $response['result']['uid'];
+                    $unprocessedVideo['uploaded'] = 'yes';
 
-                echo 'Done upload for ' . $unprocessedVideo['file'] . PHP_EOL;
+                    echo 'Done upload for ' . $unprocessedVideo['file'] . PHP_EOL;
+                }
             } else {
                 echo 'Skipping upload for ' . $unprocessedVideo['file'] . PHP_EOL;
             }
